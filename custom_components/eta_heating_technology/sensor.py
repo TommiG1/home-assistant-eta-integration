@@ -17,7 +17,7 @@ from .const import (
     EtaSensorType,
 )
 from .entity import EtaEntity
-from .utils import determine_sensor_type
+from .utils import determine_sensor_type, entity_data_key, entity_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,11 +47,13 @@ async def async_setup_entry(
     # Fetch initial values to determine types (use coordinator data if available)
     eta_sensors: list[EtaSensor | EtaStringSensor] = []
     for obj in chosen_objects:
-        if coordinator.data and obj.full_name in coordinator.data:
-            value = coordinator.data[obj.full_name]
+        data_key = entity_data_key(obj)
+        if coordinator.data and data_key in coordinator.data:
+            value = coordinator.data[data_key]
         else:
             value = await api_client.async_get_data(obj.uri)
         sensor_type = determine_sensor_type(value)
+        display_name = entity_display_name(obj, chosen_objects)
 
         if sensor_type is EtaSensorType.SENSOR:
             # Use TOTAL_INCREASING for cumulative energy sensors,
@@ -66,8 +68,8 @@ async def async_setup_entry(
                 EtaSensor(
                     coordinator=coordinator,
                     entity_description=SensorEntityDescription(
-                        key=obj.full_name,
-                        name=obj.full_name,
+                        key=data_key,
+                        name=display_name,
                         device_class=ETA_SENSOR_UNITS.get(value.unit),
                         native_unit_of_measurement=value.unit,
                         state_class=state_class,
@@ -80,8 +82,8 @@ async def async_setup_entry(
                 EtaStringSensor(
                     coordinator=coordinator,
                     entity_description=SensorEntityDescription(
-                        key=obj.full_name,
-                        name=obj.full_name,
+                        key=data_key,
+                        name=display_name,
                     ),
                     config_entry_id=config_entry.entry_id,
                 )
