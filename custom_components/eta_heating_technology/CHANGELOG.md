@@ -9,12 +9,12 @@ the second fetch overwrote the first and sensors showed `xxx`.
 
 ### Fix
 - Coordinator stores values keyed by **URI**
-- Sensor/switch `unique_id` and entity description `key` use URI
+- Sensor/switch look up coordinator data by URI
+- `unique_id` stays `full_name` when unique (preserves entity registry); uses URI only on collisions
 - Display names append the last URI segment when `full_name` collides
 
-**Note:** Existing entities get new unique IDs. After upgrading, remove orphaned
-entities in the entity registry (or reconfigure the integration) if old
-`xxx` sensors remain.
+**Note:** Duplicate menu entries (e.g. Heizgrenze) get new entity IDs. Remove the
+orphaned `xxx` entity from the entity registry after upgrading.
 
 ## v0.4.0 – Bulk Entity Import & Switch Detection
 

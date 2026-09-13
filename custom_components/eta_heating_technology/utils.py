@@ -27,12 +27,29 @@ def determine_sensor_type(value: Value) -> EtaSensorType | None:
 
 def entity_data_key(obj: Object) -> str:
     """
-    Return the coordinator / unique_id key for an ETA object.
+    Return the coordinator data key for an ETA object.
 
-    URIs are unique; full_name is not (ETA exposes inactive twin endpoints
-    with the same menu path, e.g. Heizgrenze für Heizen).
+    Always URI-based: full_name can collide for inactive twin endpoints
+    (e.g. Heizgrenze für Heizen).
     """
     return obj.uri
+
+
+def has_duplicate_full_name(obj: Object, all_objects: list[Object]) -> bool:
+    """Return True if another chosen object shares this full_name."""
+    return sum(1 for other in all_objects if other.full_name == obj.full_name) > 1
+
+
+def entity_unique_key(obj: Object, all_objects: list[Object]) -> str:
+    """
+    Return the stable unique_id suffix for an ETA object.
+
+    Prefer full_name when unique so existing entity registry entries survive
+    upgrades. Fall back to URI only when full_name collides.
+    """
+    if has_duplicate_full_name(obj, all_objects):
+        return obj.uri
+    return obj.full_name
 
 
 def entity_display_name(obj: Object, all_objects: list[Object]) -> str:
@@ -42,8 +59,7 @@ def entity_display_name(obj: Object, all_objects: list[Object]) -> str:
     When several objects share the same full_name, append the last URI segment
     so both remain distinguishable in the UI.
     """
-    duplicate_count = sum(1 for other in all_objects if other.full_name == obj.full_name)
-    if duplicate_count <= 1:
+    if not has_duplicate_full_name(obj, all_objects):
         return obj.full_name
     uri_id = obj.uri.rstrip("/").rsplit("/", maxsplit=1)[-1]
     return f"{obj.full_name} ({uri_id})"

@@ -14,7 +14,12 @@ from .const import (
     EtaSwitchStates,
 )
 from .entity import EtaEntity
-from .utils import determine_sensor_type, entity_data_key, entity_display_name
+from .utils import (
+    determine_sensor_type,
+    entity_data_key,
+    entity_display_name,
+    entity_unique_key,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +61,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     api_client=api_client,
                     entity_description=SwitchEntityDescription(
-                        key=data_key,
+                        key=entity_unique_key(obj, chosen_objects),
                         name=entity_display_name(obj, chosen_objects),
                     ),
                     config_entry_id=config_entry.entry_id,
@@ -117,7 +122,7 @@ class EtaSwitch(EtaEntity, SwitchEntity):
             self._attr_unique_id,
         )
         # Translate the value to a boolean
-        value: Value | None = self.coordinator.data.get(self.entity_description.key)
+        value: Value | None = self.coordinator.data.get(self.url)
         if value is None:
             _LOGGER.warning(
                 "is_on for %s (%s) returned None",
