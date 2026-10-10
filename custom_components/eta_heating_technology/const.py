@@ -19,6 +19,7 @@ CONF_PORT = "port"
 
 CHOSEN_ENTITIES = "chosen_entities"
 CHOSEN_SWITCHES = "chosen_switches"
+CHOSEN_BINARY_SENSORS = "chosen_binary_sensors"
 
 ETA_SENSOR_UNITS = {
     "°C": SensorDeviceClass.TEMPERATURE,

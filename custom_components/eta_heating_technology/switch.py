@@ -10,6 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .api import Error, EtaApiClientError, Value
 from .const import (
+    CHOSEN_BINARY_SENSORS,
     CHOSEN_SWITCHES,
     ETA_BINARY_SENSOR_VALUES_DE,
     EtaSensorType,
@@ -50,10 +51,13 @@ async def async_setup_entry(
 
     # None for entries created before switches were stored explicitly
     switch_names: list[str] | None = config_entry.data.get(CHOSEN_SWITCHES)
+    binary_names: list[str] | None = config_entry.data.get(CHOSEN_BINARY_SENSORS)
 
     eta_switches: list[EtaSwitch] = []
     for obj in chosen_objects:
         data_key = entity_data_key(obj)
+        if binary_names is not None and obj.full_name in binary_names:
+            continue
         if switch_names is not None:
             is_switch = obj.full_name in switch_names
         else:
