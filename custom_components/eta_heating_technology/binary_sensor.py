@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.components.binary_sensor import (
@@ -20,9 +19,6 @@ from .utils import (
     entity_display_name,
     entity_unique_key,
 )
-
-_LOGGER = logging.getLogger(__name__)
-
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
