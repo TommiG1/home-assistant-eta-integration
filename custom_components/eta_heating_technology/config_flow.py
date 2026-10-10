@@ -17,6 +17,7 @@ from homeassistant.helpers.aiohttp_client import (
 from .api import Eta, EtaApiClient, EtaApiClientError, Fub, Object, Value
 from .const import (
     CHOSEN_ENTITIES,
+    CHOSEN_SWITCHES,
     CONF_HOST,
     CONF_PORT,
     DOMAIN,
@@ -27,7 +28,6 @@ from .utils import determine_sensor_type
 _LOGGER = logging.getLogger(__name__)
 
 CHOSEN_FUBS = "chosen_fubs"
-CHOSEN_SWITCHES = "chosen_switches"
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -72,6 +72,7 @@ class ConfigurationFlowData:
             CONF_HOST: self.host,
             CONF_PORT: self.port,
             CHOSEN_ENTITIES: [obj.as_dict() for obj in self.chosen_entities],
+            CHOSEN_SWITCHES: self.switch_names,
         }
 
 
@@ -98,30 +99,30 @@ class EtaFlowHandler(ConfigFlow, domain=DOMAIN):
         user_input: dict | None = None,
     ) -> ConfigFlowResult:
         """Handle a flow initialized by the user."""
+        self._errors = {}
         if user_input is not None:
             await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}")
             self._abort_if_unique_id_configured()
 
-            url_valid = await self._test_url(user_input[CONF_HOST], user_input[CONF_PORT])
-            if url_valid:
-                possible_endpoints: Eta = await self._get_possible_endpoints(user_input[CONF_HOST], user_input[CONF_PORT])
-                self.configuration_flow_data = ConfigurationFlowData(
-                    host=user_input[CONF_HOST],
-                    port=user_input[CONF_PORT],
-                    discovered_entities=possible_endpoints,
-                )
-
-                return await self.async_step_select_fubs()
+            try:
+                if await self._test_url(user_input[CONF_HOST], user_input[CONF_PORT]):
+                    possible_endpoints: Eta = await self._get_possible_endpoints(user_input[CONF_HOST], user_input[CONF_PORT])
+                    self.configuration_flow_data = ConfigurationFlowData(
+                        host=user_input[CONF_HOST],
+                        port=user_input[CONF_PORT],
+                        discovered_entities=possible_endpoints,
+                    )
+                    return await self.async_step_select_fubs()
+            except EtaApiClientError as exception:
+                _LOGGER.debug("ETA API not reachable: %s", exception)
 
             self._errors["base"] = "url_broken"
 
-        # Provide defaults for form
-        user_input = {CONF_HOST: "0.0.0.0", CONF_PORT: "8080"}  # noqa: S104
-
-        return await self._show_config_form_user(user_input)
+        return await self._show_config_form_user(user_input or {CONF_PORT: "8080"})
 
     async def async_step_select_fubs(self, user_input: dict | None = None) -> ConfigFlowResult:
         """First selection step: choose Fubs (entity groups) to include."""
+        self._errors = {}
         fubs = self._get_fubs()
 
         if user_input is not None:
@@ -136,6 +137,7 @@ class EtaFlowHandler(ConfigFlow, domain=DOMAIN):
 
     async def async_step_select_entities(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Second selection step: choose individual entities within selected Fubs."""
+        self._errors = {}
         fubs = self._get_fubs()
 
         # Filter objects to only those from selected fubs
@@ -178,13 +180,11 @@ class EtaFlowHandler(ConfigFlow, domain=DOMAIN):
 
     async def async_step_confirm_switches(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Third step: confirm which switch entities to keep."""
+        self._errors = {}
         if user_input is not None:
+            # Deselected switches stay as read-only sensors
             confirmed_switches = user_input.get(CHOSEN_SWITCHES, [])
-            # Final chosen = sensors + confirmed switches
-            keep_names = set(self.configuration_flow_data.sensor_names) | set(confirmed_switches)
-            self.configuration_flow_data.chosen_entities = [
-                obj for obj in self.configuration_flow_data.chosen_entities if obj.full_name in keep_names
-            ]
+            self.configuration_flow_data.switch_names = confirmed_switches
             _LOGGER.debug(
                 "Final entities (sensors=%d, switches=%d): %s",
                 len(self.configuration_flow_data.sensor_names),
@@ -278,8 +278,8 @@ class EtaFlowHandler(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=user_input[CONF_HOST]): str,
-                    vol.Required(CONF_PORT, default=user_input[CONF_PORT]): str,
+                    vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, vol.UNDEFINED)): str,
+                    vol.Required(CONF_PORT, default=user_input.get(CONF_PORT, vol.UNDEFINED)): str,
                 }
             ),
             errors=self._errors,
@@ -420,6 +420,7 @@ class EtaOptionsFlowHandler(OptionsFlow):
         user_input: dict | None = None,
     ) -> ConfigFlowResult:
         """Select Fubs (entity groups) in options flow."""
+        self._errors = {}
         # Determine which fubs have currently chosen entities (for pre-selection)
         current_fub_names: list[str] = []
         for obj in self.config_entry.data.get(CHOSEN_ENTITIES, []):
@@ -503,6 +504,7 @@ class EtaOptionsFlowHandler(OptionsFlow):
                     data={
                         **self.config_entry.data,
                         CHOSEN_ENTITIES: [obj.as_dict() for obj in self._chosen_objects],
+                        CHOSEN_SWITCHES: [],
                     },
                 )
                 return self.async_create_entry(title="", data={})
@@ -543,18 +545,25 @@ class EtaOptionsFlowHandler(OptionsFlow):
         user_input: dict | None = None,
     ) -> ConfigFlowResult:
         """Confirm which switch entities to keep."""
+        self._errors = {}
         if user_input is not None:
-            confirmed_switches = user_input.get(CHOSEN_SWITCHES, [])
-            keep_names = set(self._sensor_names) | set(confirmed_switches)
-            final_objects = [obj for obj in self._chosen_objects if obj.full_name in keep_names]
+            # Deselected switches stay as read-only sensors
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
                 data={
                     **self.config_entry.data,
-                    CHOSEN_ENTITIES: [obj.as_dict() for obj in final_objects],
+                    CHOSEN_ENTITIES: [obj.as_dict() for obj in self._chosen_objects],
+                    CHOSEN_SWITCHES: user_input.get(CHOSEN_SWITCHES, []),
                 },
             )
             return self.async_create_entry(title="", data={})
+
+        # Keep earlier decisions: entities configured before as read-only stay unselected
+        previous_switches: list[str] | None = self.config_entry.data.get(CHOSEN_SWITCHES)
+        configured_names = {obj.get("full_name", "") for obj in self.config_entry.data.get(CHOSEN_ENTITIES, [])}
+        default_switches = [
+            name for name in self._switch_names if previous_switches is None or name in previous_switches or name not in configured_names
+        ]
 
         return self.async_show_form(
             step_id="confirm_switches",
@@ -562,7 +571,7 @@ class EtaOptionsFlowHandler(OptionsFlow):
                 {
                     vol.Optional(
                         CHOSEN_SWITCHES,
-                        default=self._switch_names,
+                        default=default_switches,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=self._switch_names,

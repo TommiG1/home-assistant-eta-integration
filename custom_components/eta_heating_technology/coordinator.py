@@ -62,13 +62,18 @@ class EtaDataUpdateCoordinator(DataUpdateCoordinator):
                 return_exceptions=True,
             )
 
+            for result in results:
+                if isinstance(result, EtaApiClientAuthenticationError):
+                    raise ConfigEntryAuthFailed(result) from result  # noqa: TRY301
+            if objects and not any(isinstance(result, Value) for result in results):
+                msg = f"No values received from the ETA device: {results[0]}"
+                raise UpdateFailed(msg)
+
             data: dict[str, Value] = {}
             # Preserve previous data for entities that fail to fetch
             if self.data:
                 data.update(self.data)
             for obj, result in zip(objects, results, strict=False):
-                if isinstance(result, EtaApiClientAuthenticationError):
-                    raise ConfigEntryAuthFailed(result) from result  # noqa: TRY301
                 if isinstance(result, Exception):
                     _LOGGER.warning("Failed to fetch data for %s: %s", obj.full_name, result)
                     continue

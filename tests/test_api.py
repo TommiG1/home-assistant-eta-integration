@@ -257,6 +257,16 @@ TEST_4_EX = Value(
     dec_places="0",
 )
 
+TEST_PERCENT_EX = Value(
+    value="455",
+    adv_text_offset="0",
+    unit="%",
+    uri="/user/var/120/10601/0/0/12528",
+    str_value="45,5",
+    scale_factor="10",
+    dec_places="1",
+)
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -334,6 +344,7 @@ async def test_update_state(monkeypatch, response_status, response_text, expecte
         (TEST_2_EX, EtaSensorType.SENSOR),
         (TEST_3_EX, EtaSensorType.BINARY_SENSOR),
         (TEST_4_EX, EtaSensorType.STRING_SENSOR),
+        (TEST_PERCENT_EX, EtaSensorType.SENSOR),
     ],
 )
 async def test_determine_sensor_type(value: Value, expected_sensor_type: EtaSensorType) -> None:
