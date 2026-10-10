@@ -528,10 +528,22 @@ class EtaApiClient:
             raise_for_status=False,
         )
 
-    async def async_add_to_varset(self, name: str, uri: str) -> None:
-        """Add a variable to a named set."""
+    async def async_add_to_varset(self, name: str, uri: str) -> bool:
+        """
+        Add a variable to a named set.
+
+        Returns False when the ETA rejects the URI (e.g. non-pollable menu nodes).
+        """
         path = uri_path_for_varset(uri)
-        await self._api_wrapper(method="put", url=self.build_endpoint_url(f"/user/vars/{name}/{path}"))
+        resp = await self._api_wrapper(
+            method="put",
+            url=self.build_endpoint_url(f"/user/vars/{name}/{path}"),
+            raise_for_status=False,
+        )
+        if resp.status in {HTTP_OK, 201}:
+            return True
+        _LOGGER.debug("Could not add %s to varset %s (HTTP %s)", uri, name, resp.status)
+        return False
 
     async def async_get_varset(self, name: str) -> dict[str, Value]:
         """
@@ -564,19 +576,36 @@ class EtaApiClient:
             current = await self.async_get_varset(name)
         except EtaApiClientError:
             _LOGGER.debug("Variable set %s missing or incomplete, recreating", name)
+            current = None
         else:
             missing = [uri for uri in uris if normalize_object_uri(uri) not in current]
             if not missing:
                 return
+            added = 0
             for uri in missing:
-                await self.async_add_to_varset(name, uri)
-            return
+                if await self.async_add_to_varset(name, uri):
+                    added += 1
+            if added:
+                return
+            # Existing set but nothing could be added — recreate below
 
         await self.async_delete_varset(name)
-        await self.async_create_varset(name)
+        create_resp = await self._api_wrapper(
+            method="put",
+            url=self.build_endpoint_url(f"/user/vars/{name}"),
+            raise_for_status=False,
+        )
+        if create_resp.status not in {HTTP_OK, 201}:
+            msg = f"Could not create variable set {name!r} (HTTP {create_resp.status})"
+            raise EtaApiClientError(msg)
+        added = 0
         for uri in uris:
-            await self.async_add_to_varset(name, uri)
-
+            if await self.async_add_to_varset(name, uri):
+                added += 1
+        if added == 0:
+            msg = f"Variable set {name!r} is empty after adding {len(uris)} URIs"
+            raise EtaApiClientError(msg)
+        _LOGGER.debug("Variable set %s contains %d/%d URIs", name, added, len(uris))
     async def _api_wrapper(
         self,
         method: str,

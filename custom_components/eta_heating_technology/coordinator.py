@@ -33,9 +33,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _varset_name(entry_id: str) -> str:
-    """Build a `[a-zA-Z0-9]+` variable set name from the config entry id."""
-    cleaned = re.sub(r"[^a-zA-Z0-9]", "", entry_id)
-    return f"ha{cleaned[:24]}" or "haetasensors"
+    """Build a short `[a-zA-Z0-9]+` variable set name from the config entry id."""
+    cleaned = re.sub(r"[^a-zA-Z0-9]", "", entry_id).lower()
+    # Keep short — some ETA firmwares reject long set names with HTTP 400
+    return f"ha{cleaned[-12:]}" or "haetasensors"
 
 
 # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
