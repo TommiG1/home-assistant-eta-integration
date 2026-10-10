@@ -11,9 +11,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 
+from .api import EtaApiClientError
 from .const import (
+    CHOSEN_SWITCHES,
     ETA_SENSOR_UNITS,
     ETA_STRING_SENSOR_VALUES_DE,
+    ETA_UNIT_MAPPING,
     EtaSensorType,
 )
 from .entity import EtaEntity
@@ -49,16 +52,27 @@ async def async_setup_entry(
     chosen_objects = coordinator.chosen_objects
     _LOGGER.debug("sensor_keys: %s", chosen_objects)
 
+    # None for entries created before switches were stored explicitly
+    switch_names: list[str] | None = config_entry.data.get(CHOSEN_SWITCHES)
+
     # Fetch initial values to determine types (use coordinator data if available)
     eta_sensors: list[EtaSensor | EtaStringSensor] = []
     for obj in chosen_objects:
+        if switch_names is not None and obj.full_name in switch_names:
+            continue
         data_key = entity_data_key(obj)
         unique_key = entity_unique_key(obj, chosen_objects)
-        if coordinator.data and data_key in coordinator.data:
-            value = coordinator.data[data_key]
-        else:
-            value = await api_client.async_get_data(obj.uri)
+        value = coordinator.data.get(data_key) if coordinator.data else None
+        if value is None:
+            try:
+                value = await api_client.async_get_data(obj.uri)
+            except EtaApiClientError as exception:
+                _LOGGER.warning("Skipping sensor %s, no value available yet: %s", obj.full_name, exception)
+                continue
         sensor_type = determine_sensor_type(value)
+        if sensor_type is EtaSensorType.BINARY_SENSOR and switch_names is not None:
+            # On/off value that was not confirmed as switch: show it read-only
+            sensor_type = EtaSensorType.STRING_SENSOR
         display_name = entity_display_name(obj, chosen_objects)
 
         if sensor_type is EtaSensorType.SENSOR:
@@ -77,7 +91,7 @@ async def async_setup_entry(
                         key=unique_key,
                         name=display_name,
                         device_class=ETA_SENSOR_UNITS.get(value.unit),
-                        native_unit_of_measurement=value.unit,
+                        native_unit_of_measurement=ETA_UNIT_MAPPING.get(value.unit, value.unit),
                         state_class=state_class,
                     ),
                     config_entry_id=config_entry.entry_id,
@@ -128,7 +142,7 @@ class EtaSensor(EtaEntity, SensorEntity):
         self._data_key = data_key
 
     @property
-    def native_value(self) -> float | str | None:
+    def native_value(self) -> float | None:
         """Return the native value of the sensor."""
         _LOGGER.debug(
             "Calling native_value for: %s with _attr_unique_id: %s",
@@ -144,7 +158,9 @@ class EtaSensor(EtaEntity, SensorEntity):
             try:
                 return float(scaled)
             except (ValueError, TypeError):
-                return scaled
+                # Numeric sensors must not report text, HA rejects that state
+                _LOGGER.debug("Non-numeric value %r for %s", scaled, self.entity_description.key)
+                return None
         _LOGGER.debug(
             "native_value for %s (%s) returned None",
             self.entity_description.key,

@@ -4,6 +4,7 @@ import enum
 from logging import Logger, getLogger
 
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import PERCENTAGE
 
 LOGGER: Logger = getLogger(__package__)
 
@@ -17,6 +18,7 @@ CONF_HOST = "host"
 CONF_PORT = "port"
 
 CHOSEN_ENTITIES = "chosen_entities"
+CHOSEN_SWITCHES = "chosen_switches"
 
 ETA_SENSOR_UNITS = {
     "°C": SensorDeviceClass.TEMPERATURE,
@@ -34,6 +36,11 @@ ETA_SENSOR_UNITS = {
     "s": SensorDeviceClass.DURATION,
     "%rH": SensorDeviceClass.HUMIDITY,
     "m³/h": SensorDeviceClass.VOLUME_FLOW_RATE,
+}
+
+# ETA units that Home Assistant expects in a different notation
+ETA_UNIT_MAPPING = {
+    "%rH": PERCENTAGE,
 }
 
 
