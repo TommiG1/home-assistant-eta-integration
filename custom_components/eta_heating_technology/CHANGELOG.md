@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v0.5.0 – Variable sets, varinfo switches, active errors
+
+### Bulk polling via `/user/vars`
+- Coordinator creates a per-entry variable set and reads all chosen values in one request
+- Set is recreated after ETA reboot; falls back to individual fetches if bulk fails
+
+### Writable detection via `/user/varinfo`
+- On/off endpoints use `isWritable` to become switches vs binary sensors
+- New `binary_sensor` platform for read-only on/off values
+- Config/options flow stores `chosen_binary_sensors`
+
+### Active errors via `/user/errors`
+- Diagnostic sensor `Active errors` with count and message attributes
+
 ## v0.4.3 – Upstream sync and robustness fixes
 
 ### Sync

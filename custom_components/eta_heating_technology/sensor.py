@@ -10,9 +10,11 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
+from homeassistant.const import EntityCategory
 
 from .api import EtaApiClientError
 from .const import (
+    CHOSEN_BINARY_SENSORS,
     CHOSEN_SWITCHES,
     ETA_SENSOR_UNITS,
     ETA_STRING_SENSOR_VALUES_DE,
@@ -39,7 +41,7 @@ if TYPE_CHECKING:
     from .data import EtaConfigEntry
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: PLR0912
     hass: HomeAssistant,  # noqa: ARG001
     config_entry: EtaConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -54,11 +56,16 @@ async def async_setup_entry(
 
     # None for entries created before switches were stored explicitly
     switch_names: list[str] | None = config_entry.data.get(CHOSEN_SWITCHES)
+    binary_names: list[str] | None = config_entry.data.get(CHOSEN_BINARY_SENSORS)
 
     # Fetch initial values to determine types (use coordinator data if available)
-    eta_sensors: list[EtaSensor | EtaStringSensor] = []
+    eta_sensors: list[EtaSensor | EtaStringSensor | EtaErrorsSensor] = [
+        EtaErrorsSensor(coordinator=coordinator, config_entry_id=config_entry.entry_id),
+    ]
     for obj in chosen_objects:
         if switch_names is not None and obj.full_name in switch_names:
+            continue
+        if binary_names is not None and obj.full_name in binary_names:
             continue
         data_key = entity_data_key(obj)
         unique_key = entity_unique_key(obj, chosen_objects)
@@ -71,7 +78,7 @@ async def async_setup_entry(
                 continue
         sensor_type = determine_sensor_type(value)
         if sensor_type is EtaSensorType.BINARY_SENSOR and switch_names is not None:
-            # On/off value that was not confirmed as switch: show it read-only
+            # Legacy: on/off not stored as binary_sensor → text fallback
             sensor_type = EtaSensorType.STRING_SENSOR
         display_name = entity_display_name(obj, chosen_objects)
 
@@ -210,3 +217,35 @@ class EtaStringSensor(EtaEntity, SensorEntity):
             return value.str_value
         # Last resort: return raw value as string
         return str(value.value)
+
+
+class EtaErrorsSensor(EtaEntity, SensorEntity):
+    """Number of active errors reported by `/user/errors`."""
+
+    def __init__(
+        self,
+        coordinator: EtaDataUpdateCoordinator,
+        config_entry_id: str,
+    ) -> None:
+        """Initialize the errors sensor."""
+        super().__init__(coordinator)
+        self.entity_description = SensorEntityDescription(
+            key="active_errors",
+            name="Active errors",
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+        self._attr_unique_id = f"{config_entry_id}-active_errors"
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of active errors."""
+        return len(self.coordinator.active_errors)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return error details for automations and the UI."""
+        return {
+            "errors": self.coordinator.active_errors,
+            "messages": [err.get("msg", "") for err in self.coordinator.active_errors],
+        }
