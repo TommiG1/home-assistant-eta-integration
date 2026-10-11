@@ -606,6 +606,7 @@ class EtaApiClient:
             msg = f"Variable set {name!r} is empty after adding {len(uris)} URIs"
             raise EtaApiClientError(msg)
         _LOGGER.debug("Variable set %s contains %d/%d URIs", name, added, len(uris))
+
     async def _api_wrapper(
         self,
         method: str,
